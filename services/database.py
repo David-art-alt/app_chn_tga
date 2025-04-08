@@ -15,13 +15,12 @@ from sqlalchemy import create_engine, text
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-#DB_NAME = "samples.db"
-def get_db_path():
-    """Reads the database path from the environment variable."""
+load_dotenv()  # funktioniert nur lokal
 
-    db_path = st.secrets.get("DB_PATH")
+def get_db_path():
+    db_path = os.getenv("DB_PATH") or st.secrets.get("DB_PATH", None)
     if not db_path:
-        raise ValueError("DB_PATH is not set. Please configure the .env file.")
+        raise ValueError("DB_PATH is not set. Please configure .env or secrets.toml.")
     return db_path
 
 

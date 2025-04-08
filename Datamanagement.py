@@ -38,18 +38,11 @@ def main():
     if not check_database_connection():
         st.stop()
 
-    # Datenbank ggf. initialisieren (nur bei Bedarf entkommentieren)
-    # initialize_database()
-
-    # Benutzerprüfung
+    # Weiter mit App-Logik, z. B. Login oder Dashboard
     if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-        st.warning("Bitte loggen Sie sich ein, um auf die Inhalte zugreifen zu können.")
-        login()  # Login-Seite anzeigen
-        return
-
-    # App starten
-    app()
-
+        login()  # z. B. eigene Login-Funktion
+    else:
+        app()  # z. B. dein Hauptdashboard
 
 # ----------------------------
 # Startpunkt
