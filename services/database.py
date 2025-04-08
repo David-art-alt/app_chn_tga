@@ -105,6 +105,13 @@ def add_user(username, password, role):
     finally:
         conn.close()
 
+def delete_user(username):
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+    conn.commit()
+    conn.close()
+
 
 
 
