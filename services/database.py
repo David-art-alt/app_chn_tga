@@ -8,6 +8,7 @@ import logging
 import pandas as pd
 import sqlalchemy
 import streamlit as st
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 
@@ -17,7 +18,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 #DB_NAME = "samples.db"
 def get_db_path():
     """Reads the database path from the environment variable."""
-    db_path = st.secrets["DB_PATH"]
+    load_dotenv()  # nur lokal aktiv
+    db_path = os.getenv("DB_PATH", st.secrets.get("DB_PATH", None))
     if not db_path:
         raise ValueError("DB_PATH is not set. Please configure the .env file.")
     return db_path
