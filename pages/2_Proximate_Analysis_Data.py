@@ -1,125 +1,136 @@
+import sqlite3
 import streamlit as st
-from services.eltra_tga_processing import result_files_to_df, tga_calculate_mean, check_file_content_results
-from services.export import tga_export_to_excel
-from services.database import check_existing_data, save_dataframe_to_sql, fetch_all_data
 import pandas as pd
+import io
+from services.chn_processing import chn_process_uploaded_file, chn_calculate_mean, check_required_chn_headers
+from services.eltra_tga_processing import check_required_tga_headers, tga_process_uploaded_file
+from services.export import chn_export_to_excel
+from services.database import save_dataframe_to_sql, fetch_all_data, get_db_path
 
 # Sicherstellen, dass ein Benutzer eingeloggt ist
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
     st.warning("You must be logged in to access this page.")
-    st.stop()  # Beendet die weitere Ausführung der Seite
+    st.stop()
 
-# Seitenkonfiguration
+# Initialisiere die CHN-Daten im Session-State (falls noch nicht vorhanden)
+if 'tga_data' not in st.session_state:
+    st.session_state['tga_data'] = pd.DataFrame()
+
+# Streamlit-Seite konfigurieren
 st.set_page_config(
-    page_title="ELTRA TGA Analyzer",
-    page_icon="📊",
+    page_title="ELTRA TGA Analysis",
+    page_icon="📈",
     layout="wide"
 )
 
-# Seitentitel
-st.title("ELTRA TGA Analysis")
-
-# Initialisiere Session-Status für den Download-Button
-if "download_ready" not in st.session_state:
-    st.session_state["download_ready"] = False
-    st.session_state["download_buffer"] = None
-
 # Datei-Upload-Bereich
 uploaded_files = st.file_uploader(
-    label="Select one or more ELTRA TGA analysis files",
+    label="Choose one or more ELTRA TGA analysis files for upload.",
     type=["txt", "csv"],
     accept_multiple_files=True
 )
 
-# Hauptlogik: Verarbeite hochgeladene Dateien
-if uploaded_files:  # Gehe nur weiter, wenn Dateien hochgeladen werden
-    st.write("🔍 Starting file validation...")
-
-    # Temporäre Pfade für hochgeladene Dateien
-    temp_file_paths = []
-    status_messages = []
-
+# Hochgeladene Dateien verarbeiten
+if uploaded_files:
     for uploaded_file in uploaded_files:
-        temp_path = f"{uploaded_file.name}"
+        file_name = uploaded_file.name
+        print(file_name)
+
         try:
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            temp_file_paths.append(temp_path)
+            content = uploaded_file.read().decode("utf-8")
+            print(content)
+
+            # CHN-Header überprüfen
+            if not check_required_tga_headers(content):
+                st.error(f"❌ The file {file_name} does not contain valid ELTRA TGA headers.")
+                continue
+
+            # Datei verarbeiten
+            df_tga = tga_process_uploaded_file(content)
+            #print(df_tga)
+            # Prüfung, ob Verarbeitung fehlgeschlagen ist
+            if df_tga is None:
+                st.error(f"⚠️ Processing failed for {file_name}.")
+                continue
+
+            # Vermeidung von Duplikaten basierend auf einer eindeutigen Spalte (z. B. 'sample_id')
+            if not st.session_state['tga_data'].empty:
+                df_chn = df_tga[~df_tga['sample_id'].isin(st.session_state['tga_data']['sample_id'])]
+
+            # Daten hinzufügen
+            st.session_state['tga_data'] = pd.concat([st.session_state['tga_data'], df_tga], ignore_index=True)
+            #st.success(f"✅ File '{file_name}' successfully processed and added!")
+
         except Exception as e:
-            st.error(f"❌ Error while saving the file '{uploaded_file.name}': {e}")
-            continue  # Fahre mit verbleibenden Dateien fort, wenn ein Fehler auftritt
+            st.error(f"❌ Error processing the file {file_name}: {e}")
 
-    # Dateien auf Gültigkeit prüfen
-    valid_files = check_file_content_results(temp_file_paths)
-
-    # Validierungsergebnisse anzeigen
-    for file in temp_file_paths:
-        if file in valid_files:
-            status_messages.append(f"✅ File '{file}' is valid.")
-        else:
-            status_messages.append(f"❌ File '{file}' is invalid or could not be verified.")
-
-    # Zeige Validierungsstatus für jede Datei
-    for msg in status_messages:
-        st.write(msg)
-
-    # Weiterverarbeitung nur für gültige Dateien
-    if valid_files:
-        dfs_all = result_files_to_df(valid_files)
-
-        if dfs_all:
-            # Mittelwerte und Gesamtdaten kombinieren
-            dfs_mean = [tga_calculate_mean(df) for df in dfs_all]
-            df_combined_all = pd.concat(dfs_all, ignore_index=True)
-            df_combined_mean = pd.concat(dfs_mean, ignore_index=True)
-
-            # Berechnungsergebnisse anzeigen
-            st.subheader("Mean values by ID")
-            st.dataframe(df_combined_mean)
-
-            st.subheader("All ELTRA TGA Data")
-            st.dataframe(df_combined_all)
-
-            # Excel-Export vorbereiten
-            buffer = tga_export_to_excel(df_combined_mean, df_combined_all)
-
-            # Update Session-State mit Download-Daten
-            st.session_state["download_ready"] = True
-            st.session_state["download_buffer"] = buffer
-
-            st.success("🎉 Data is ready for download!")
-
-            # Datenbank-Upload-Sektion
-            st.subheader("Upload to Database")
-            if st.button("Save Processed Data to Database"):
-                try:
-                    if not check_existing_data(df_combined_all, "eltra_tga_data"):
-                        save_dataframe_to_sql(df_combined_all, "eltra_tga_data")
-                        st.success("Data successfully saved to the database!")
-                    else:
-                        st.warning("Data already exists in the database!")
-                except Exception as e:
-                    st.error(f"❌ Error during database operation: {e}")
-        else:
-            st.error("No valid data could be processed.")
-    else:
-        st.error("No valid files found. Please check your input files.")
-
-# Platzhalter für den Download-Bereich
-if st.session_state.get("download_ready") and st.session_state["download_buffer"]:
-    with st.sidebar:  # Download-Button in der Seitenleiste
-        st.download_button(
-            label="📥 Download Excel File",
-            data=st.session_state["download_buffer"],
-            file_name="ELTRA_TGA_Analysis.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
 # Bereich zum Anzeigen vorhandener Daten aus der Datenbank
-st.subheader("ELTRA TGA Proximate Analysis Data of Registered Samples")
-if st.button("View TGA Data"):
-    samples = fetch_all_data('eltra_tga_data')
-    if not samples.empty:
-        st.table(samples)
-    else:
-        st.warning("No data available in the database!")
+# Verbindung zur SQLite-Datenbank herstellen
+def get_db_connection():
+    conn = sqlite3.connect(get_db_path())  # Ersetzen Sie 'your_database.db' durch den Pfad zu Ihrer Datenbank
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# Daten aus der Datenbank abrufen und Tabellen verknüpfen
+def fetch_joined_data():
+    with get_db_connection() as conn:
+        query = """
+        SELECT eltra_tga_data.*, samples.project
+        FROM eltra_tga_data
+        JOIN samples ON eltra_tga_data.sample_id = samples.sample_id
+        """
+        df = pd.read_sql_query(query, conn)
+    return df
+
+
+# Daten aus der Datenbank abrufen
+data = fetch_joined_data()
+
+if data.empty:
+    st.warning("⚠️ No Data from Database available.")
+else:
+    # Filteroptionen in der Sidebar hinzufügen
+    st.sidebar.header("Filteroptions")
+    sample_id_filter = st.sidebar.text_input("Sample ID")
+    project_filter = st.sidebar.text_input("Project")
+
+    # Daten basierend auf den Filtern filtern
+    if sample_id_filter:
+        data = data[data['sample_id'].str.contains(sample_id_filter, case=False, na=False)]
+    if project_filter:
+        data = data[data['project'].str.contains(project_filter, case=False, na=False)]
+
+    st.markdown("<h2 style='text-align: center;'>TGA Data from Database</h2>", unsafe_allow_html=True)
+    st.dataframe(data, height=400)
+
+# Anzeige der hochgeladenen Daten im Session-State
+if st.session_state['tga_data'].empty:
+    st.warning("⚠️ No uploaded data available.")
+else:
+    st.markdown("<h2 style='text-align: center;'>Uploaded ELTRA TGA Data</h2>", unsafe_allow_html=True)
+    st.dataframe(st.session_state['tga_data'])
+
+    # Download-Button in der Sidebar
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        st.session_state['tga_data'].to_excel(writer, sheet_name="ELTRA_TGA_Data", index=False)
+    output.seek(0)
+
+    st.sidebar.download_button(
+        label="📥 Download Uploaded-Data as Excel File",
+        data=output,
+        file_name="TGA_Daten.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    # Upload-Button für CHN-Daten zur Datenbank hinzufügen
+    if st.sidebar.button("📤 Upload TGA-Data to Database"):
+        try:
+            # Hochgeladene Daten in die Datenbank speichern
+            save_dataframe_to_sql(st.session_state['tga_data'], 'eltra_tga_data')
+
+
+        except Exception as e:
+            st.error(f"❌ Error uploading the data: {e}")

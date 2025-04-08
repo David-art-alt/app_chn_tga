@@ -4,7 +4,7 @@ import csv
 from io import StringIO
 
 
-def chn_process_uploaded_file(content: str):
+def chn_process_uploaded_file(content: str) -> pd.DataFrame | None:
     """
     Liest eine CHN-Analyzedatei ein und verarbeitet sie minimal.
     """
@@ -63,9 +63,15 @@ def chn_calculate_mean(df_chn_all: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def check_required_chn_headers(file_data: str):
+def check_required_chn_headers(file_data: str) -> bool:
     """
-    Prüft, ob die Datei die erforderlichen Header für die CHN-Analyse enthält.
+    Validates whether the uploaded CHN analysis file contains all required headers.
+
+    Args:
+        file_data (str): The raw content of the file as a UTF-8 decoded string.
+
+    Returns:
+        bool: True if all required headers are found in any row, False otherwise.
     """
     required_headers = [
         "sample_id",
@@ -80,16 +86,12 @@ def check_required_chn_headers(file_data: str):
     try:
         reader = csv.reader(file_data.splitlines(), delimiter="\t")
 
-        for line_number, row in enumerate(reader, start=1):
+        for row in reader:
             if all(header in row for header in required_headers):
-                #st.success(f"Header gefunden in Zeile {line_number}: {row}")
-                return True
+                return True  # All headers found
+        return False  # No matching header row found
 
-        #st.error("❌ Invalid file – no complete header row found.")
-        return False
-
-    except Exception as e:
-        #st.error(f"Error during header validation: {e}")
+    except Exception:
         return False
 
 

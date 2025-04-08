@@ -3,22 +3,17 @@ import pandas as pd
 import streamlit as st
 import re
 
-def check_file_content_results(file_paths: Union[str, List[str]]) -> List[str]:
-    """
-    Checks the contents of one or multiple text files to ensure they match a predefined format.
 
-    Criteria:
-    - Each file must contain expected identifiers in the first lines.
+def check_required_tga_headers(file_data: str) -> bool:
+    """
+    Checks the content of a single ELTRA TGA file to ensure it contains expected identifiers.
 
     Args:
-        file_paths (Union[str, List[str]]): A single file path or a list of file paths.
+        file_data (str): The content of the file as a decoded UTF-8 string.
 
     Returns:
-        List[str]: A list of paths to valid files.
+        bool: True if the file is valid, False otherwise.
     """
-    if isinstance(file_paths, str):
-        file_paths = [file_paths]
-
     expected_identifiers = [
         "Tga Version:",
         "Analyse durchgeführt:",
@@ -27,35 +22,105 @@ def check_file_content_results(file_paths: Union[str, List[str]]) -> List[str]:
         "Applikation:"
     ]
 
-    valid_files = []
+    try:
+        lines = [line.strip() for line in file_data.splitlines()]
+        top_lines = lines[:10]  # Only check the first 10 lines
 
-    print("\n🔍 Starting validation of result files...\n")
+        missing = [idf for idf in expected_identifiers if not any(line.startswith(idf) for line in top_lines)]
 
-    for file_path in file_paths:
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                lines = file.readlines()
+        if missing:
+            return False
+        return True
 
-            lines = [line.strip() for line in lines]
+    except Exception:
+        return False
 
-            missing_identifiers = [idf for idf in expected_identifiers if not any(line.startswith(idf) for line in lines[:10])]
 
-            if missing_identifiers:
-                print(f"❌ File '{file_path}' is invalid. Missing identifiers: {', '.join(missing_identifiers)}")
-            else:
-                print(f"✅ File '{file_path}' is valid.")
-                valid_files.append(file_path)
+def tga_process_uploaded_file(file_content: str) -> pd.DataFrame | None:
+    """
+    Processes the content of a single ELTRA TGA result file and returns a cleaned DataFrame,
+    including the 'analysis_date' extracted from the header.
 
-        except FileNotFoundError:
-            print(f"❌ Error: File '{file_path}' not found. Please check the file path.")
-        except Exception as e:
-            print(f"⚠️ An error occurred in file '{file_path}': {e}")
+    Args:
+        file_content (str): The decoded content of the uploaded file.
 
-    print("\n🔍 Validation completed.")
-    print(f"✅ Validated files: {len(valid_files)} / {len(file_paths)}\n")
+    Returns:
+        pd.DataFrame | None: Processed data or None if an error occurred.
+    """
+    try:
+        lines = file_content.splitlines()
+        data = []
+        columns = None
+        expected_num_columns = None
+        analysis_date_str = None
 
-    return valid_files
+        # 1. Extrahiere Datum aus Kopfbereich
+        for line in lines[:15]:  # Nur in den ersten Zeilen suchen
+            if line.strip().startswith("Analyse durchgeführt:"):
+                raw_date = line.split("Analyse durchgeführt:")[1].strip()
+                analysis_date_str = raw_date
+                break
 
+        if not analysis_date_str:
+            st.warning("⚠️ No 'Analyse durchgeführt:' date found.")
+            analysis_date_str = ""
+
+        for line in lines:
+            if "N ," in line and "Id" in line:
+                columns = [col.strip() for col in line.split(',')]
+                expected_num_columns = len(columns)
+                continue
+
+            if any(keyword in line for keyword in ["Gruppe", "MW:", "STD:"]):
+                continue
+
+            values = line.split(',')
+            if columns and len(values) == expected_num_columns:
+                data.append([val.strip() for val in values])
+
+        if not columns or not data:
+            st.error("❌ No valid data structure found in the uploaded TGA file.")
+            return None
+
+        df = pd.DataFrame(data, columns=columns)
+
+        # Typkonvertierung
+        if "N" in df.columns:
+            df["N"] = pd.to_numeric(df["N"], errors="coerce", downcast="integer")
+        if "Id" in df.columns:
+            df["Id"] = df["Id"].astype(str)
+
+        for col in df.columns[2:]:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Relevante Spalten auswählen und umbenennen
+        df_tga_all = df[['Id', 'Moisture', 'Va', 'Aa_LTA', 'Aa_HTA', 'Vd', 'Ad_LTA', 'Ad_HTA', 'FCa']].copy()
+        df_tga_all.rename(columns={
+            'Id': 'sample_id',
+            'Va': 'Volatiles_ar',
+            'Vd': 'Volatiles_db',
+            'Aa_LTA': 'Ash_LTA_ar',
+            'Aa_HTA': 'Ash_HTA_ar',
+            'Ad_LTA': 'Ash_LTA_db',
+            'Ad_HTA': 'Ash_HTA_db',
+            'FCa': 'Fixed_C_ar'
+        }, inplace=True)
+
+        # Neue Spalte mit dem Analysedatum einfügen
+        df_tga_all["analysis_date"] = analysis_date_str
+        # Spalten in gewünschter Reihenfolge ordnen
+        df_tga_all = df_tga_all[
+            ['sample_id', 'analysis_date', 'Moisture', 'Volatiles_ar', 'Ash_LTA_ar', 'Ash_HTA_ar',
+             'Volatiles_db', 'Ash_LTA_db', 'Ash_HTA_db', 'Fixed_C_ar']
+        ].copy()
+
+        # Nach sample_id sortieren
+        df_tga_all = df_tga_all.sort_values(by='sample_id', ascending=True)
+        return df_tga_all
+
+    except Exception as e:
+        st.error(f"❌ Error while processing the TGA file: {e}")
+        return None
 
 def extract_description_from_file(file_path: str) -> str:
     """
@@ -72,68 +137,6 @@ def extract_description_from_file(file_path: str) -> str:
     else:
         return "❌ No descriptive text found."
 
-
-def result_files_to_df(file_paths: List[str]) -> List[pd.DataFrame]:
-    """
-    Reads a list of text files, extracts relevant measurement data, and converts data types
-    based on column names: 'N' to int, 'Id' to str, and all other numeric columns to float.
-    Ignores lines containing 'Gruppe', 'MW:', and 'STD:'.
-
-    Args:
-        file_paths (List[str]): List of paths to measurement files.
-
-    Returns:
-        List[pd.DataFrame]: A list of DataFrames with the extracted data.
-    """
-    dataframes = []
-    status_messages = []
-
-    for file_path in file_paths:
-        data = []
-        columns = None
-        expected_num_columns = None
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                for line in file:
-                    if "N ," in line and "Id" in line:
-                        columns = [col.strip() for col in line.split(',')]
-                        expected_num_columns = len(columns)
-                        continue
-
-                    if any(keyword in line for keyword in ["Gruppe", "MW:", "STD:"]):
-                        continue
-
-                    values = line.split(',')
-                    if len(values) == expected_num_columns:
-                        data.append([val.strip() for val in values])
-
-            if columns:
-                df = pd.DataFrame(data, columns=columns)
-
-                if "N" in df.columns:
-                    df["N"] = df["N"].astype(int)
-                if "Id" in df.columns:
-                    df["Id"] = df["Id"].astype(str)
-                for col in df.columns[2:]:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-
-                df_tga_all = df[['Id', 'Moisture', 'Va', 'Aa_LTA', 'Aa_HTA', 'Vd', 'Ad_LTA', 'Ad_HTA', 'FCa']]
-                df_tga_all.rename(columns={'Id': 'sample_id', 'Moisture': 'Moisture','Va': 'Volatiles_ar', 'Vd':'Volatiles_db', 'Aa_LTA': 'Ash_LTA_ar',
-                                           'Aa_HTA': 'Ash_HTA_ar', 'Ad_LTA': 'Ash_HTA_db', 'Ad_HTA': 'Ash_LTA_db', 'FCa': 'Fixed_C_ar'})
-                dataframes.append(df_tga_all)
-                status_messages.append(f"✅ File '{file_path}' successfully processed.")
-            else:
-                status_messages.append(f"❌ Error: No header found in file '{file_path}'.")
-
-        except FileNotFoundError:
-            status_messages.append(f"❌ Error: File '{file_path}' not found.")
-        except Exception as e:
-            status_messages.append(f"⚠️ An error occurred in file '{file_path}': {e}")
-
-    st.write("\n".join(status_messages))
-
-    return dataframes
 
 
 def tga_calculate_mean(df: pd.DataFrame) -> pd.DataFrame:
@@ -159,3 +162,4 @@ def tga_calculate_mean(df: pd.DataFrame) -> pd.DataFrame:
     else:
         st.error("❌ Error: 'sample_id' column not found.")
         return pd.DataFrame()
+

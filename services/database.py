@@ -54,7 +54,13 @@ def check_database_connection():
 
         # Initialisieren der Datenbank
         initialize_database()
-        return False
+        initialize_users()
+        if is_database_initialized():
+            logging.info(f"✅  Initialization and Connection to the database established successfully at '{db_path}'.")
+            st.success("✅ Initialization and Connection to the database established successfully!")
+            return True
+
+
 
     # 3. Datenbank existiert, prüfen ob Verbindung herstellbar + Initialisierung abgeschlossen
     if not is_database_initialized():
@@ -151,6 +157,7 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS eltra_tga_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sample_id TEXT NOT NULL,
+                analysis_date TEXT,
                 Moisture REAL,
                 Volatiles_ar REAL,
                 Volatiles_db REAL,
@@ -172,7 +179,7 @@ def initialize_database():
         conn.close()
 
     # Benutzer initialisieren
-    initialize_users()
+    # initialize_users()
 
 
 def initialize_users():
@@ -306,8 +313,8 @@ def save_dataframe_to_sql(df, table_name):
             warning_message = f"The following sample_id(s) were ignored because they are not registered: {', '.join(invalid_ids)}"
             st.warning(warning_message, icon="⚠️")
 
-        # Nur für CHN-Daten: Überprüfung der Duplikate mit analysis_date
-        if "analysis_date" in df.columns and table_name == "chn_data":
+        # CHN: Überprüfung der Duplikate mit analysis_date
+        if "analysis_date" in df.columns and table_name == 'chn_data':
             # Vorhandene Kombinationen aus sample_id und analysis_date abrufen
             logging.info(f"analysis Date EXIST")
             cursor.execute(f"SELECT sample_id, analysis_date FROM {table_name}")
@@ -320,20 +327,67 @@ def save_dataframe_to_sql(df, table_name):
             new_combinations = incoming_combinations.difference(existing_combinations)
 
             # Warnung für doppelte Kombinationen von 'sample_id' und 'analysis_date'
-        if duplicate_combinations:
-            logging.warning(
-                f"{len(duplicate_combinations)} duplicate sample_id(s) with the same analysis_date were ignored."
-            )
-            warning_message = (
-                "The following sample_id(s) with the same analysis_date already exist and were ignored: "
-                f"{', '.join(f'{x[0]} ({x[1]})' for x in duplicate_combinations)}"
-            )
-            st.warning(warning_message, icon="⚠️")
+            if duplicate_combinations:
+                logging.warning(
+                    f"{len(duplicate_combinations)} duplicate sample_id(s) with the same analysis_date were ignored."
+                )
+                warning_message = (
+                    "The following sample_id(s) with the same analysis_date already exist and were ignored: "
+                    f"{', '.join(f'{x[0]} ({x[1]})' for x in duplicate_combinations)}"
+                )
+                st.warning(warning_message, icon="⚠️")
 
-        # Filtern der gültigen Datensätze (Basierend auf neuen Kombinationen)
-        valid_data = df.loc[df.apply(
-            lambda row: (str(row["sample_id"]), str(row["analysis_date"])) in new_combinations, axis=1
-        )].copy()
+            # Filtern der gültigen Datensätze (Basierend auf neuen Kombinationen)
+            valid_data = df.loc[df.apply(
+                lambda row: (str(row["sample_id"]), str(row["analysis_date"])) in new_combinations, axis=1
+            )].copy()
+
+        # TGA: Überprüfung der Duplikate mit analysis_date + Moisture
+        if "analysis_date" in df.columns and "Moisture" in df.columns and table_name == "eltra_tga_data":
+            logging.info("🔎 Checking for duplicates in eltra_tga_data using (sample_id, analysis_date, Moisture)")
+
+            # Existierende Kombinationen auslesen
+            cursor.execute(f"SELECT sample_id, analysis_date, Moisture FROM {table_name}")
+            existing_records = cursor.fetchall()
+
+            # Rundung auf 3 Nachkommastellen
+            existing_combinations = {
+                (str(row[0]), str(row[1]), round(float(row[2]), 3)) for row in existing_records if row[2] is not None
+            }
+
+            # Eingehende Kombinationen vorbereiten
+            incoming_combinations = set(
+                zip(
+                    df["sample_id"].astype(str),
+                    df["analysis_date"].astype(str),
+                    df["Moisture"].round(3)
+                )
+            )
+
+            duplicate_combinations = incoming_combinations.intersection(existing_combinations)
+            new_combinations = incoming_combinations.difference(existing_combinations)
+
+            # Warnung bei Duplikaten
+            if duplicate_combinations:
+                warning_message = (
+                    f"⚠️ {len(duplicate_combinations)} duplicate entries were ignored based on "
+                    f"sample_id + analysis_date + Moisture:\n"
+                    f"{', '.join(f'{s} ({d}, {m})' for s, d, m in duplicate_combinations)}"
+                )
+                logging.warning(warning_message)
+                st.warning(warning_message)
+
+            # Nur neue Kombinationen beibehalten
+            valid_data = df.loc[
+                df.apply(
+                    lambda row: (
+                                    str(row["sample_id"]),
+                                    str(row["analysis_date"]),
+                                    round(row["Moisture"], 3)
+                                ) in new_combinations,
+                    axis=1
+                )
+            ].copy()
 
         # Überprüfung, ob gültige Daten vorhanden sind
         if not valid_data.empty:
