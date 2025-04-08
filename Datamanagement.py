@@ -1,22 +1,8 @@
 import streamlit as st
-from dotenv import load_dotenv
 from services.database import initialize_database, authenticate_user, add_user, fetch_all_users, \
     check_database_connection
 from services.siedbar_layout import admin_dashboard, login, logout
 import os
-
-# ----------------------------
-# Globale Variablen vorbereiten
-# ----------------------------
-
-def load_env_file():
-    """Lädt die .env-Datei und prüft den Pfad."""
-    if not os.path.exists(".env"):
-        st.warning("⚠️ Es wurde keine .env-Datei gefunden. Bitte konfigurieren Sie Ihren lokalen Pfad zur Datenbank.")
-        return False
-    else:
-        load_dotenv()
-        return True
 
 
 # ----------------------------
@@ -48,10 +34,6 @@ def app():
 
 def main():
     """Hauptsteuerungs-Logik der App."""
-    # ENV zuerst prüfen/laden
-    env_loaded = load_env_file()
-    if not env_loaded:
-        st.stop()  # Bricht die App ab, wenn .env fehlt
 
     if not check_database_connection():
         st.stop()

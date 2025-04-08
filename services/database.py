@@ -18,8 +18,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 #DB_NAME = "samples.db"
 def get_db_path():
     """Reads the database path from the environment variable."""
-    load_dotenv()  # nur lokal aktiv
-    db_path = os.getenv("DB_PATH", st.secrets.get("DB_PATH", None))
+
+    db_path = st.secrets.get("DB_PATH")
     if not db_path:
         raise ValueError("DB_PATH is not set. Please configure the .env file.")
     return db_path
