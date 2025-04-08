@@ -30,23 +30,13 @@ def app():
     # Admin-spezifische Navigation
     if st.session_state.get("role") == "admin":
         selection = st.sidebar.radio("Seite auswählen",
-                                     ["Home", "Admin-Dashboard", "Sample Registration", "Proximate Analysis Data",
-                                      "CHN Analysis Data"])
+                                     ["Home", "Admin-Dashboard"])
     else:
-        selection = st.sidebar.radio("Seite auswählen",
-                                     ["Home", "Sample Registration", "Proximate Analysis Data", "CHN Analysis Data"])
+        selection = None
 
     # Seiteninhalte basierend auf der Auswahl
     if selection == "Admin-Dashboard":
         admin_dashboard()
-    elif selection == "Sample Registration":
-        st.title("Sample Registration")
-        st.text_input("Enter the Sample Name:")
-        st.text_area("Add a description about the sample:")
-    elif selection == "Proximate Analysis Data":
-        st.title("Proximate Analysis Data")
-    elif selection == "CHN Analysis Data":
-        st.title("CHN Analysis Data")
 
     # Logout-Funktion anbieten
     st.sidebar.button("Logout", on_click=logout)
