@@ -1,6 +1,5 @@
 ####################################################################################
 import os
-import base64
 import logging
 import pandas as pd
 import bcrypt
@@ -24,24 +23,24 @@ def add_user(username, password, role):
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     data = {"username": username, "password": hashed_pw, "role": role}
     response = supabase.table("users").insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error adding user: {response.error}")
+    if response.status_code != 201:
+        logging.error(f"❌ Error adding user: {response}")
         return False
     return True
 
 def authenticate_user(username, password):
     response = supabase.table("users").select("*").eq("username", username).execute()
-    if response.data:
+    if response.status_code == 200 and response.data:
         user = response.data[0]
         stored_pw = user["password"]
         if bcrypt.checkpw(password.encode(), stored_pw.encode()):
-            return True, user["role"]  # Erfolgreich eingeloggt → Rolle mitgeben
+            return True, user["role"]
     return False, None
 
 # Initialisierung
 def initialize_default_users():
     response = supabase.table("users").select("*").eq("username", "admin").execute()
-    if not response.data:
+    if response.status_code == 200 and not response.data:
         add_user("admin", "admin", "admin")
         logging.info("✅ Default admin user created")
 
@@ -58,38 +57,32 @@ def save_sample_data(sample_id, sample_type, project, registration_date, samplin
         "responsible_person": responsible
     }
     response = supabase.table("samples").insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error saving sample: {response.error}")
+    if response.status_code != 201:
+        logging.error(f"❌ Error saving sample: {response}")
         return False
     return True
 
 def fetch_all_users():
-    """
-    Holt alle Benutzer (username und role) aus der 'users'-Tabelle.
-    """
     response = supabase.table("users").select("username, role").execute()
-    if response.error:
-        logging.error(f"❌ Error fetching users: {response.error}")
+    if response.status_code != 200:
+        logging.error(f"❌ Error fetching users: {response}")
         return []
     return [(user["username"], user["role"]) for user in response.data]
 
-# Alle Samples abrufen
 def fetch_all_samples():
     response = supabase.table("samples").select("*").execute()
-    if response.error:
-        logging.error(f"❌ Error fetching samples: {response.error}")
+    if response.status_code != 200 or not response.data:
+        logging.error(f"❌ Error fetching samples: {response}")
         return pd.DataFrame()
     return pd.DataFrame(response.data)
 
-# Beliebige Tabelle abrufen
 def fetch_all_data(table_name):
     response = supabase.table(table_name).select("*").execute()
-    if response.error:
-        logging.error(f"❌ Error fetching {table_name}: {response.error}")
+    if response.status_code != 200 or not response.data:
+        logging.error(f"❌ Error fetching {table_name}: {response}")
         return pd.DataFrame()
     return pd.DataFrame(response.data)
 
-# Duplikatscheck
 def check_existing_data(new_df: pd.DataFrame, table_name, unique_cols):
     existing = fetch_all_data(table_name)
     if existing.empty:
@@ -99,12 +92,11 @@ def check_existing_data(new_df: pd.DataFrame, table_name, unique_cols):
         return not merged.empty
     return False
 
-# DataFrame speichern
 def save_dataframe_to_supabase(df: pd.DataFrame, table_name):
     data = df.to_dict(orient='records')
     response = supabase.table(table_name).insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error saving to {table_name}: {response.error}")
+    if response.status_code != 201:
+        logging.error(f"❌ Error saving to {table_name}: {response}")
         return False
     logging.info(f"✅ {len(data)} rows saved to {table_name}.")
     return True
