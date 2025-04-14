@@ -20,68 +20,79 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Benutzerfunktionen
 def add_user(username, password, role):
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    data = {"username": username, "password": hashed_pw, "role": role}
-    response = supabase.table("users").insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error adding user: {response.error}")
+    try:
+        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        data = {"username": username, "password": hashed_pw, "role": role}
+        supabase.table("users").insert(data).execute()
+        return True
+    except Exception as e:
+        logging.error(f"❌ Error adding user: {e}")
         return False
-    return True
 
 def authenticate_user(username, password):
-    response = supabase.table("users").select("*").eq("username", username).execute()
-    if not response.error and response.data:
-        user = response.data[0]
-        stored_pw = user["password"]
-        if bcrypt.checkpw(password.encode(), stored_pw.encode()):
-            return True, user["role"]
+    try:
+        response = supabase.table("users").select("*").eq("username", username).execute()
+        if response.data:
+            user = response.data[0]
+            stored_pw = user["password"]
+            if bcrypt.checkpw(password.encode(), stored_pw.encode()):
+                return True, user["role"]
+    except Exception as e:
+        logging.error(f"❌ Authentication error: {e}")
     return False, None
 
 # Initialisierung
 def initialize_default_users():
-    response = supabase.table("users").select("*").eq("username", "admin").execute()
-    if not response.error and not response.data:
-        add_user("admin", "admin", "admin")
-        logging.info("✅ Default admin user created")
+    try:
+        response = supabase.table("users").select("*").eq("username", "admin").execute()
+        if not response.data:
+            add_user("admin", "admin", "admin")
+            logging.info("✅ Default admin user created")
+    except Exception as e:
+        logging.error(f"❌ Error during default user initialization: {e}")
 
 # Sample speichern
 def save_sample_data(sample_id, sample_type, project, registration_date, sampling_date, location, condition, responsible):
-    data = {
-        "sample_id": sample_id,
-        "sample_type": sample_type,
-        "project": project,
-        "registration_date": registration_date,
-        "sampling_date": sampling_date,
-        "sampling_location": location,
-        "sample_condition": condition,
-        "responsible_person": responsible
-    }
-    response = supabase.table("samples").insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error saving sample: {response.error}")
+    try:
+        data = {
+            "sample_id": sample_id,
+            "sample_type": sample_type,
+            "project": project,
+            "registration_date": registration_date,
+            "sampling_date": sampling_date,
+            "sampling_location": location,
+            "sample_condition": condition,
+            "responsible_person": responsible
+        }
+        supabase.table("samples").insert(data).execute()
+        return True
+    except Exception as e:
+        logging.error(f"❌ Error saving sample: {e}")
         return False
-    return True
 
 def fetch_all_users():
-    response = supabase.table("users").select("username, role").execute()
-    if response.error:
-        logging.error(f"❌ Error fetching users: {response.error}")
+    try:
+        response = supabase.table("users").select("username, role").execute()
+        return [(user["username"], user["role"]) for user in response.data]
+    except Exception as e:
+        logging.error(f"❌ Error fetching users: {e}")
         return []
-    return [(user["username"], user["role"]) for user in response.data]
 
 def fetch_all_samples():
-    response = supabase.table("samples").select("*").execute()
-    if response.error or not response.data:
-        logging.error(f"❌ Error fetching samples: {response.error}")
+    try:
+        response = supabase.table("samples").select("*").execute()
+        return pd.DataFrame(response.data)
+    except Exception as e:
+        logging.error(f"❌ Error fetching samples: {e}")
         return pd.DataFrame()
-    return pd.DataFrame(response.data)
 
 def fetch_all_data(table_name):
-    response = supabase.table(table_name).select("*").execute()
-    if response.error or not response.data:
-        logging.error(f"❌ Error fetching {table_name}: {response.error}")
+    try:
+        response = supabase.table(table_name).select("*").execute()
+        return pd.DataFrame(response.data)
+    except Exception as e:
+        logging.error(f"❌ Error fetching {table_name}: {e}")
         return pd.DataFrame()
-    return pd.DataFrame(response.data)
 
 def check_existing_data(new_df: pd.DataFrame, table_name, unique_cols):
     existing = fetch_all_data(table_name)
@@ -93,10 +104,11 @@ def check_existing_data(new_df: pd.DataFrame, table_name, unique_cols):
     return False
 
 def save_dataframe_to_supabase(df: pd.DataFrame, table_name):
-    data = df.to_dict(orient='records')
-    response = supabase.table(table_name).insert(data).execute()
-    if response.error:
-        logging.error(f"❌ Error saving to {table_name}: {response.error}")
+    try:
+        data = df.to_dict(orient='records')
+        supabase.table(table_name).insert(data).execute()
+        logging.info(f"✅ {len(data)} rows saved to {table_name}.")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Error saving to {table_name}: {e}")
         return False
-    logging.info(f"✅ {len(data)} rows saved to {table_name}.")
-    return True
