@@ -1,7 +1,8 @@
 import streamlit as st
-from services.database import initialize_database, authenticate_user, add_user, fetch_all_users, \
-    check_database_connection
-from services.siedbar_layout import admin_dashboard, login, logout
+from services.admin import admin_dashboard
+from services.database import initialize_database, authenticate_user, add_user, check_database_connection, \
+    initialize_default_users
+from services.siedbar_layout import login, logout
 import os
 
 
@@ -31,18 +32,28 @@ def app():
 # ----------------------------
 # Steuerungslogik
 # ----------------------------
-
 def main():
-    """Hauptsteuerungs-Logik der App."""
+    """Main logic of the application."""
 
-    if not check_database_connection():
+    # Check if the database is connected and initialized
+    db_status = check_database_connection()
+    if db_status == "connection_error":
+        st.error("❌ Verbindung zur Datenbank konnte nicht hergestellt werden. "
+                 "Überprüfen Sie die DATABASE_URI und stellen Sie sicher, dass die Datenbank verfügbar ist.")
+        st.stop()
+    elif db_status == "not_initialized":
+        st.warning("⚠️ Die Datenbank scheint nicht initialisiert zu sein. Initialisiere nun...")
+        initialize_database()
+        initialize_default_users()
+        st.success("✅ Die Datenbank wurde erfolgreich initialisiert. Bitte starten Sie die Anwendung neu!")
         st.stop()
 
-    # Weiter mit App-Logik, z. B. Login oder Dashboard
+    # Check if the user is logged in, otherwise call the login function
     if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-        login()  # z. B. eigene Login-Funktion
+        login()  # Zeigt den Login-Bereich an
     else:
-        app()  # z. B. dein Hauptdashboard
+        app()  # Startet das Haupt-Dashboard
+
 
 # ----------------------------
 # Startpunkt
