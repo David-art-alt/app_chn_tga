@@ -1,34 +1,26 @@
+from services.database import fetch_all_samples
 import datetime
 import logging
-from services.database import fetch_all_samples  # Holt alle Samples aus Supabase
 
 def generate_sample_id(prefix: str) -> str:
-    """
-    Generiert eine eindeutige Sample-ID im Format PREFIX_JAHR_XXXX basierend auf existierenden IDs in Supabase.
-    """
     try:
-        # Aktuelles Jahr zweistellig, z. B. "24" für 2024
         year = datetime.datetime.now().strftime("%y")
-
-        # Alle bisherigen Sample-IDs laden
         samples_df = fetch_all_samples()
 
-        # Filter auf IDs mit dem gleichen Jahr
-        mask = samples_df['sample_id'].str.contains(f"_{year}_", na=False)
-        relevant_ids = samples_df.loc[mask, 'sample_id']
+        if samples_df.empty or "sample_id" not in samples_df.columns:
+            next_counter = 1
+        else:
+            # Filter auf IDs mit dem gleichen Jahr
+            mask = samples_df['sample_id'].str.contains(f"_{year}_", na=False)
+            relevant_ids = samples_df.loc[mask, 'sample_id']
 
-        # Extrahiere die laufenden Nummern (XXXX) aus den IDs
-        counters = []
-        for sid in relevant_ids:
-            try:
-                counters.append(int(sid.split('_')[-1]))
-            except (ValueError, IndexError):
-                continue
+            if relevant_ids.empty:
+                next_counter = 1
+            else:
+                counters = relevant_ids.str.extract(rf"{prefix}_{year}_(\d+)")
+                counters = counters.dropna()[0].astype(int)
+                next_counter = counters.max() + 1 if not counters.empty else 1
 
-        # Nächste freie Nummer bestimmen
-        next_counter = max(counters) + 1 if counters else 1
-
-        # Neue Sample-ID generieren
         sample_id = f"{prefix}_{year}_{next_counter:04d}"
         return sample_id
 
