@@ -64,6 +64,9 @@ def save_sample_data(sample_id, sample_type, project, registration_date, samplin
     return True
 
 def fetch_all_users():
+    """
+    Holt alle Benutzer (username und role) aus der 'users'-Tabelle.
+    """
     response = supabase.table("users").select("username, role").execute()
     if response.error:
         logging.error(f"❌ Error fetching users: {response.error}")
