@@ -1,5 +1,5 @@
 import streamlit as st
-from services.database import fetch_all_users, add_user
+from services.database import (fetch_all_users, add_user)
 from services.database import supabase  # Falls supabase in database.py exportiert ist
 
 def admin_dashboard():
