@@ -51,24 +51,22 @@ def initialize_default_users():
     except Exception as e:
         logging.error(f"❌ Error during default user initialization: {e}")
 
-# Sample speichern
 def save_sample_data(sample_id, sample_type, project, registration_date, sampling_date, location, condition, responsible):
-    try:
-        data = {
-            "sample_id": sample_id,
-            "sample_type": sample_type,
-            "project": project,
-            "registration_date": registration_date,
-            "sampling_date": sampling_date,
-            "sampling_location": location,
-            "sample_condition": condition,
-            "responsible_person": responsible
-        }
-        supabase.table("samples").insert(data).execute()
-        return True
-    except Exception as e:
-        logging.error(f"❌ Error saving sample: {e}")
+    data = {
+        "sample_id": sample_id,
+        "sample_type": sample_type,
+        "project": project,
+        "registration_date": str(registration_date),  # <-- Umwandlung
+        "sampling_date": str(sampling_date),          # <-- Umwandlung
+        "sampling_location": location,
+        "sample_condition": condition,
+        "responsible_person": responsible
+    }
+    response = supabase.table("samples").insert(data).execute()
+    if hasattr(response, "error") and response.error:
+        logging.error(f"❌ Error saving sample: {response.error}")
         return False
+    return True
 
 def fetch_all_users():
     try:
