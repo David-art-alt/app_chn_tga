@@ -32,9 +32,11 @@ def add_user(username, password, role):
 def authenticate_user(username, password):
     response = supabase.table("users").select("*").eq("username", username).execute()
     if response.data:
-        stored_pw = response.data[0]["password"]
-        return bcrypt.checkpw(password.encode(), stored_pw.encode())
-    return False
+        user = response.data[0]
+        stored_pw = user["password"]
+        if bcrypt.checkpw(password.encode(), stored_pw.encode()):
+            return True, user["role"]  # Erfolgreich eingeloggt → Rolle mitgeben
+    return False, None
 
 # Initialisierung
 def initialize_default_users():
@@ -60,6 +62,13 @@ def save_sample_data(sample_id, sample_type, project, registration_date, samplin
         logging.error(f"❌ Error saving sample: {response.error}")
         return False
     return True
+
+def fetch_all_users():
+    response = supabase.table("users").select("username, role").execute()
+    if response.error:
+        logging.error(f"❌ Error fetching users: {response.error}")
+        return []
+    return [(user["username"], user["role"]) for user in response.data]
 
 # Alle Samples abrufen
 def fetch_all_samples():
