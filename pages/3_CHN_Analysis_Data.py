@@ -3,7 +3,9 @@ import pandas as pd
 import io
 from services.chn_processing import chn_process_uploaded_file, check_required_chn_headers
 from services.export import chn_export_to_excel
-from services.database import save_dataframe_to_supabase, fetch_all_data
+from services.database import fetch_all_data, save_dataframe_to_chn_table  # <-- neue Funktion!
+from services.database import CHNData
+from services.database import Sample
 
 # Sicherstellen, dass ein Benutzer eingeloggt ist
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -44,11 +46,11 @@ if uploaded_files:
             st.error(f"❌ Error in {file_name}: {e}")
 
 # ----------------------
-# Daten aus Supabase abrufen (join)
+# Daten aus DB abrufen (join)
 # ----------------------
 def fetch_joined_data():
-    df_chn = fetch_all_data("chn_data")
-    df_samples = fetch_all_data("samples")
+    df_chn = fetch_all_data(CHNData)
+    df_samples = fetch_all_data(Sample)
 
     if df_chn.empty or df_samples.empty:
         return pd.DataFrame()
@@ -71,7 +73,7 @@ else:
     if proj:
         data = data[data['project'].str.contains(proj, case=False, na=False)]
 
-    st.markdown("<h2 style='text-align: center;'>CHN Data from Supabase</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>CHN Data from Database</h2>", unsafe_allow_html=True)
     st.dataframe(data, height=400)
 
 # ----------------------
@@ -91,10 +93,14 @@ else:
 
     st.sidebar.download_button("📥 Download Excel", data=output, file_name="CHN_Daten.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # Upload zur Supabase
+    # Upload zur Datenbank
     if st.sidebar.button("📤 Upload CHN to DB"):
-        try:
-            save_dataframe_to_supabase(st.session_state['chn_data'], "chn_data")
-            st.success("✅ Data uploaded to Supabase.")
-        except Exception as e:
-            st.error(f"❌ Upload failed: {e}")
+        success, skipped, errors, missing = save_dataframe_to_chn_table(st.session_state['chn_data'])
+
+        st.success(f"✅ Erfolgreich gespeichert: {success}")
+        if skipped:
+            st.info(f"ℹ️ Übersprungen (bereits vorhanden oder ungültig): {skipped}")
+        if errors:
+            st.error(f"❌ Fehler beim Speichern: {errors}")
+        if missing:
+            st.warning(f"⚠️ Nicht gefundene Sample IDs: {', '.join(set(missing))}")

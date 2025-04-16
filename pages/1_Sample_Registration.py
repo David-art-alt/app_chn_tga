@@ -1,6 +1,6 @@
 import streamlit as st
 import datetime
-from services.database import save_sample_data, fetch_all_samples
+from services.database import save_sample_data, fetch_all_data, Sample
 from services.generate_id import generate_sample_id
 
 # -------------------------------
@@ -88,7 +88,7 @@ if st.button("➕ Register New Sample"):
 # -------------------------------
 # Samples anzeigen
 # -------------------------------
-data = fetch_all_samples()
+data = fetch_all_data(Sample)
 
 if data.empty:
     st.warning("⚠️ No Data from Database available.")
@@ -102,5 +102,5 @@ else:
     if project_filter:
         data = data[data['project'].str.contains(project_filter, case=False, na=False)]
 
-    st.markdown("<h2 style='text-align: center;'>Registered Samples from Supabase</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>Registered Samples from PostgreSQL</h2>", unsafe_allow_html=True)
     st.dataframe(data, height=400)

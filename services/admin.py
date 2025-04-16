@@ -1,6 +1,5 @@
 import streamlit as st
-
-from services.database import supabase, fetch_all_users, add_user  # Falls supabase in database.py exportiert ist
+from services.database import fetch_all_users, add_user, update_user_role, delete_user
 
 def admin_dashboard():
     st.title("Admin Dashboard")
@@ -38,7 +37,7 @@ def admin_dashboard():
         selected_user = st.selectbox("Select User", [user[0] for user in users], key="update_role")
         new_role = st.selectbox("New Role", ["user", "admin"], key="role_select")
         if st.button("Update Role"):
-            supabase.table("users").update({"role": new_role}).eq("username", selected_user).execute()
+            update_user_role(selected_user, new_role)
             st.success(f"✅ Role updated for {selected_user} to {new_role}")
             st.rerun()
 
@@ -49,7 +48,7 @@ def admin_dashboard():
     if users:
         user_to_delete = st.selectbox("Select User to Delete", [user[0] for user in users], key="delete_user")
         if st.button("Delete User"):
-            supabase.table("users").delete().eq("username", user_to_delete).execute()
+            delete_user(user_to_delete)
             st.success(f"🗑️ User {user_to_delete} has been deleted.")
             st.rerun()
 

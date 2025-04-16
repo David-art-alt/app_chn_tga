@@ -1,11 +1,11 @@
-from services.database import fetch_all_samples
+from services.database import fetch_all_data,Sample
 import datetime
 import logging
 
 def generate_sample_id(prefix: str) -> str:
     try:
         year = datetime.datetime.now().strftime("%y")
-        samples_df = fetch_all_samples()
+        samples_df = fetch_all_data(Sample)
 
         if samples_df.empty or "sample_id" not in samples_df.columns:
             next_counter = 1
@@ -21,7 +21,7 @@ def generate_sample_id(prefix: str) -> str:
                 counters = counters.dropna()[0].astype(int)
                 next_counter = counters.max() + 1 if not counters.empty else 1
 
-        sample_id = f"{prefix}_{year}_{next_counter:04d}"
+        sample_id = f"{prefix}_{year}_{next_counter:05d}"
         return sample_id
 
     except Exception as e:
