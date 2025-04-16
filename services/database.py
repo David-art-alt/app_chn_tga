@@ -2,6 +2,7 @@ import os
 import logging
 import pandas as pd
 import bcrypt
+import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, Integer, Float, Text, ForeignKey, inspect
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -11,9 +12,14 @@ from sqlalchemy.schema import UniqueConstraint
 # Logging-Konfiguration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# Umgebungsvariablen laden
+# .env laden
 load_dotenv()
-DATABASE_URI = os.getenv("DATABASE_URI")
+
+# Versuche zuerst .env, falls leer/nicht vorhanden → nimm st.secrets
+DATABASE_URI = os.getenv("DATABASE_URI") or st.secrets.get("DATABASE_URI")
+
+if not DATABASE_URI:
+    raise ValueError("❌ DATABASE_URI ist weder in .env noch in st.secrets gesetzt!")
 
 # SQLAlchemy Setup
 engine = create_engine(DATABASE_URI)
