@@ -2,10 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from services.chn_processing import chn_process_uploaded_file, check_required_chn_headers
-from services.export import chn_export_to_excel
-from services.database import fetch_all_data, save_dataframe_to_chn_table  # <-- neue Funktion!
-from services.database import CHNData
-from services.database import Sample
+from services.database import fetch_all_chn_data, save_dataframe_to_chn_table
 
 # Sicherstellen, dass ein Benutzer eingeloggt ist
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -48,32 +45,20 @@ if uploaded_files:
 # ----------------------
 # Daten aus DB abrufen (join)
 # ----------------------
-def fetch_joined_data():
-    df_chn = fetch_all_data(CHNData)
-    df_samples = fetch_all_data(Sample)
+st.sidebar.header("Filter")
+all_projects = fetch_all_chn_data()['project'].dropna().unique().tolist()
+proj = st.sidebar.selectbox("Project", [""] + all_projects)
+filtered_data = fetch_all_chn_data(project_filter=proj)
+sample_options = filtered_data['sample_id'].dropna().unique().tolist()
+sid = st.sidebar.selectbox("Sample ID", [""] + sample_options, key="chn_sample_select")
+if sid:
+    filtered_data = filtered_data[filtered_data['sample_id'] == sid]
+data = filtered_data
 
-    if df_chn.empty or df_samples.empty:
-        return pd.DataFrame()
-
-    return df_chn.merge(df_samples[['sample_id', 'project']], on='sample_id', how='left')
-
-# ----------------------
-# Daten anzeigen & filtern
-# ----------------------
-data = fetch_joined_data()
 if data.empty:
     st.warning("⚠️ No CHN data in database.")
 else:
-    st.sidebar.header("Filter")
-    sid = st.sidebar.text_input("Sample ID")
-    proj = st.sidebar.text_input("Project")
-
-    if sid:
-        data = data[data['sample_id'].str.contains(sid, case=False, na=False)]
-    if proj:
-        data = data[data['project'].str.contains(proj, case=False, na=False)]
-
-    st.markdown("<h2 style='text-align: center;'>CHN Data from Database</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>CHN Data</h2>", unsafe_allow_html=True)
     st.dataframe(data, height=400)
 
 # ----------------------
@@ -96,8 +81,10 @@ else:
     # Upload zur Datenbank
     if st.sidebar.button("📤 Upload CHN to DB"):
         success, skipped, errors, missing = save_dataframe_to_chn_table(st.session_state['chn_data'])
-
-        st.success(f"✅ Erfolgreich gespeichert: {success}")
+        if success:
+            st.success(f"✅ Erfolgreich gespeichert: {success}")
+            st.session_state['chn_data'] = pd.DataFrame()
+            st.rerun()
         if skipped:
             st.info(f"ℹ️ Übersprungen (bereits vorhanden oder ungültig): {skipped}")
         if errors:

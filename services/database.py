@@ -1,27 +1,50 @@
 import os
-import logging
-import pandas as pd
 import bcrypt
 import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, String, Integer, Float, Text, ForeignKey, inspect
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.schema import UniqueConstraint
+import pandas as pd
+import logging
 
-# Logging-Konfiguration
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# .env laden
-load_dotenv()
 
-# Versuche zuerst .env, falls leer/nicht vorhanden → nimm st.secrets
+# -------------------------------
+# 🔧 Logging konfigurieren
+# -------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+# -------------------------------
+# 🌍 Umgebung laden
+# -------------------------------
+load_dotenv()  # Lädt .env standardmäßig
+mode = os.getenv("APP_ENV", "dev")  # default: dev
+
+# Versuche, weitere spezifische Datei zu laden
+dotenv_file = f".env.{mode}"
+if os.path.exists(dotenv_file):
+    load_dotenv(dotenv_file)
+    logging.info(f"✅ Umgebungskonfiguration geladen aus {dotenv_file}")
+else:
+    logging.warning(f"⚠️ {dotenv_file} nicht gefunden. Fallback auf Standardvariablen.")
+
+# -------------------------------
+# 🔌 Datenbank-URI laden
+# -------------------------------
 DATABASE_URI = os.getenv("DATABASE_URI") or st.secrets.get("DATABASE_URI")
 
 if not DATABASE_URI:
-    raise ValueError("❌ DATABASE_URI ist weder in .env noch in st.secrets gesetzt!")
+    logging.critical("❌ DATABASE_URI ist weder in .env noch in st.secrets gesetzt!")
+    st.stop()
 
-# SQLAlchemy Setup
+# -------------------------------
+# 🛠️ SQLAlchemy Setup
+# -------------------------------
 engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -48,6 +71,8 @@ class User(Base):
 
 class Sample(Base):
     __tablename__ = 'samples'
+    chn_data = relationship("CHNData", back_populates="sample")
+    eltra_tga_data = relationship("EltraTGAData", back_populates="sample")
     sample_id = Column(String, primary_key=True)
     sample_type = Column(String)
     project = Column(String)
@@ -61,13 +86,16 @@ class Sample(Base):
 class CHNData(Base):
     __tablename__ = 'chn_data'
     __table_args__ = (UniqueConstraint('sample_id', 'analysis_date', name='uix_sample_analysis'),)
-
     id = Column(Integer, primary_key=True, autoincrement=True)
     sample_id = Column(String, ForeignKey('samples.sample_id'))
+
+    sample = relationship("Sample", back_populates="chn_data")  # <-- wichtig
+
     analysis_date = Column(String)
     carbon_percentage = Column(Float)
     hydrogen_percentage = Column(Float)
     nitrogen_percentage = Column(Float)
+
 
 class EltraTGAData(Base):
     __tablename__ = 'eltra_tga_data'
@@ -75,6 +103,8 @@ class EltraTGAData(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     sample_id = Column(String, ForeignKey('samples.sample_id'))
+
+    sample = relationship("Sample", back_populates="eltra_tga_data")  # <-- wichtig
     analysis_date = Column(String)
     moisture = Column(Float)
     volatiles_ar = Column(Float)
@@ -194,10 +224,29 @@ def fetch_all_users():
     finally:
         session.close()
 
-def save_sample_data(**kwargs):
+def save_sample_data(
+    sample_id,
+    sample_type,
+    project,
+    registration_date,
+    sampling_date,
+    sampling_location,
+    sample_condition,
+    responsible_person
+):
     session = get_session()
     try:
-        session.add(Sample(**kwargs))
+        sample = Sample(
+            sample_id=sample_id,
+            sample_type=sample_type,
+            project=project,
+            registration_date=registration_date,
+            sampling_date=sampling_date,
+            sampling_location=sampling_location,
+            sample_condition=sample_condition,
+            responsible_person=responsible_person
+        )
+        session.add(sample)
         session.commit()
         return True
     except Exception as e:
@@ -251,6 +300,8 @@ def save_dataframe_to_chn_table(df):
     return success_count, skipped_count, error_count, missing_samples
 
 def save_dataframe_to_tga_table(df):
+    df.columns = [col.lower() for col in df.columns]
+
     session = get_session()
     success_count = 0
     skipped_count = 0
@@ -299,13 +350,115 @@ def save_dataframe_to_tga_table(df):
 
     return success_count, skipped_count, error_count, missing_samples
 
-def fetch_all_data(table_class):
+def fetch_all_samples(sample_id_filter=None, project_filter=None):
     session = get_session()
     try:
-        entries = session.query(table_class).all()
-        return pd.DataFrame([{k: v for k, v in vars(e).items() if not k.startswith('_')} for e in entries])
+        query = session.query(Sample)
+        if sample_id_filter:
+            query = query.filter(Sample.sample_id.ilike(f"%{sample_id_filter}%"))
+        if project_filter:
+            query = query.filter(Sample.project.ilike(f"%{project_filter}%"))
+        entries = query.all()
+        columns_order = [
+            "sample_id", "project", "sample_type", "registration_date", "sampling_date",
+            "sampling_location", "sample_condition", "responsible_person"
+        ]
+
+        return pd.DataFrame([{k: v for k, v in vars(e).items() if not k.startswith('_')} for e in entries])[
+            columns_order]
+
     except Exception as e:
-        logging.error(f"❌ Fehler beim Laden der Daten aus {table_class.__tablename__}: {e}")
+        logging.error(f"❌ Fehler beim Laden der Sample-Daten: {e}")
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+def fetch_all_chn_data(sample_id_filter=None, project_filter=None):
+    session = get_session()
+    try:
+        query = session.query(CHNData).join(Sample, CHNData.sample_id == Sample.sample_id)
+
+        if sample_id_filter:
+            query = query.filter(CHNData.sample_id.ilike(f"%{sample_id_filter}%"))
+        if project_filter:
+            query = query.filter(Sample.project.ilike(f"%{project_filter}%"))
+
+        results = query.all()
+
+        data = []
+        for entry in results:
+            row = {
+                "sample_id": entry.sample_id,
+                "project": entry.sample.project if entry.sample else None,
+                "analysis_date": entry.analysis_date,
+                "carbon_percentage": entry.carbon_percentage,
+                "hydrogen_percentage": entry.hydrogen_percentage,
+                "nitrogen_percentage": entry.nitrogen_percentage,
+            }
+            data.append(row)
+
+        df = pd.DataFrame(data)
+
+        # Optionale Spaltenreihenfolge
+        columns_order = [
+            "sample_id", "project", "analysis_date",
+            "carbon_percentage", "hydrogen_percentage", "nitrogen_percentage"
+        ]
+        if not df.empty:
+            df = df[columns_order]
+
+        return df
+
+    except Exception as e:
+        logging.error(f"❌ Fehler beim Laden der CHN-Daten mit Projektinfo: {e}")
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+def fetch_all_eltra_tga_data(sample_id_filter=None, project_filter=None):
+    session = get_session()
+    try:
+        query = session.query(EltraTGAData).join(Sample, EltraTGAData.sample_id == Sample.sample_id)
+
+        if sample_id_filter:
+            query = query.filter(EltraTGAData.sample_id.ilike(f"%{sample_id_filter}%"))
+        if project_filter:
+            query = query.filter(Sample.project.ilike(f"%{project_filter}%"))
+
+        results = query.all()
+
+        data = []
+        for entry in results:
+            row = {
+                "sample_id": entry.sample_id,
+                "project": entry.sample.project if entry.sample else None,
+                "analysis_date": entry.analysis_date,
+                "moisture": entry.moisture,
+                "volatiles_ar": entry.volatiles_ar,
+                "volatiles_db": entry.volatiles_db,
+                "ash_lta_ar": entry.ash_lta_ar,
+                "ash_lta_db": entry.ash_lta_db,
+                "ash_hta_ar": entry.ash_hta_ar,
+                "ash_hta_db": entry.ash_hta_db,
+                "fixed_c_ar": entry.fixed_c_ar,
+            }
+            data.append(row)
+
+        df = pd.DataFrame(data)
+
+        columns_order = [
+            "sample_id", "project", "analysis_date",
+            "moisture", "volatiles_ar", "volatiles_db",
+            "ash_lta_ar", "ash_lta_db", "ash_hta_ar", "ash_hta_db",
+            "fixed_c_ar"
+        ]
+        if not df.empty:
+            df = df[columns_order]
+
+        return df
+
+    except Exception as e:
+        logging.error(f"❌ Fehler beim Laden der Eltra-TGA-Daten mit Projektinfo: {e}")
         return pd.DataFrame()
     finally:
         session.close()

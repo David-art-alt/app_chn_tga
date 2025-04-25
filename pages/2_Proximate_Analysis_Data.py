@@ -3,8 +3,7 @@ import streamlit as st
 import pandas as pd
 import io
 from services.eltra_tga_processing import check_required_tga_headers, tga_process_uploaded_file
-from services.export import chn_export_to_excel
-from services.database import save_dataframe_to_tga_table, fetch_all_data, Sample, EltraTGAData
+from services.database import save_dataframe_to_tga_table,fetch_all_eltra_tga_data
 
 # Login prüfen
 if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
@@ -45,32 +44,26 @@ if uploaded_files:
         except Exception as e:
             st.error(f"❌ Error in {file_name}: {e}")
 
-# Daten aus DB (Join)
-def fetch_joined_data():
-    df_tga = fetch_all_data(EltraTGAData)
-    df_samples = fetch_all_data(Sample)
+# Daten aus DB abrufen (join)
+# ----------------------
 
-    if df_tga.empty or df_samples.empty:
-        return pd.DataFrame()
+st.sidebar.header("Filter")
+# Fetch all projects for selectbox
+all_projects = fetch_all_eltra_tga_data()['project'].dropna().unique().tolist()
+proj_tga = st.sidebar.selectbox("Project", [""] + all_projects)
+# Filter by selected project
+filtered_data = fetch_all_eltra_tga_data(project_filter=proj_tga)
+sample_options = filtered_data['sample_id'].dropna().unique().tolist()
+sid_tga = st.sidebar.selectbox("Sample ID", [""] + sample_options)
+if sid_tga:
+    filtered_data = filtered_data[filtered_data['sample_id'] == sid_tga]
+data_tga = filtered_data
 
-    return df_tga.merge(df_samples[['sample_id', 'project']], on='sample_id', how='left')
-
-# Anzeigen & Filtern
-data = fetch_joined_data()
-if data.empty:
-    st.warning("⚠️ No TGA data in database.")
+if data_tga.empty:
+    st.warning("⚠️ No Eltra-TGA data in database.")
 else:
-    st.sidebar.header("Filter")
-    sid = st.sidebar.text_input("Sample ID")
-    proj = st.sidebar.text_input("Project")
-
-    if sid:
-        data = data[data['sample_id'].str.contains(sid, case=False, na=False)]
-    if proj:
-        data = data[data['project'].str.contains(proj, case=False, na=False)]
-
-    st.markdown("<h2 style='text-align: center;'>TGA Data from Database</h2>", unsafe_allow_html=True)
-    st.dataframe(data, height=400)
+    st.markdown("<h2 style='text-align: center;'>Eltra-TGA Data</h2>", unsafe_allow_html=True)
+    st.dataframe(data_tga, height=400)
 
 # Hochgeladene Daten anzeigen
 if st.session_state['tga_data'].empty:
@@ -90,10 +83,12 @@ else:
     # 📤 Upload TGA-Daten in die Datenbank
     if st.sidebar.button("📤 Upload TGA to DB"):
         try:
-            success, skipped, errors = save_dataframe_to_tga_table(st.session_state['tga_data'])
+            success, skipped, errors, missing = save_dataframe_to_tga_table(st.session_state['tga_data'])
 
             if success:
-                st.success(f"✅ {success} neue Datensätze gespeichert.")
+                st.success(f"✅ Erfolgreich gespeichert: {success}")
+                st.session_state['tga_data'] = pd.DataFrame()
+                st.rerun()
             if skipped:
                 st.info(f"⏭️ {skipped} Datensätze übersprungen (Duplikate oder fehlende Sample IDs).")
             if errors:

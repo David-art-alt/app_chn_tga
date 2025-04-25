@@ -107,14 +107,19 @@ def tga_process_uploaded_file(file_content: str) -> pd.DataFrame | None:
 
         # Neue Spalte mit dem Analysedatum einfügen
         df_tga_all["analysis_date"] = analysis_date_str
+
         # Spalten in gewünschter Reihenfolge ordnen
         df_tga_all = df_tga_all[
             ['sample_id', 'analysis_date', 'Moisture', 'Volatiles_ar', 'Ash_LTA_ar', 'Ash_HTA_ar',
              'Volatiles_db', 'Ash_LTA_db', 'Ash_HTA_db', 'Fixed_C_ar']
         ].copy()
 
+        # Spaltennamen in Kleinbuchstaben umwandeln – richtig!
+        df_tga_all.columns = [col.lower() for col in df_tga_all.columns]
+
         # Nach sample_id sortieren
         df_tga_all = df_tga_all.sort_values(by='sample_id', ascending=True)
+
         return df_tga_all
 
     except Exception as e:
