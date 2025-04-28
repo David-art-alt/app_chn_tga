@@ -17,84 +17,100 @@ if 'tga_data' not in st.session_state:
 st.set_page_config(page_title="ELTRA TGA Analysis", page_icon="🔥", layout="wide")
 
 # Datei-Upload
-uploaded_files = st.file_uploader("Upload ELTRA TGA files", type=["txt", "csv"], accept_multiple_files=True)
+uploaded_file = st.file_uploader("Upload ELTRA TGA files", type=["txt", "csv"], accept_multiple_files=False)
 
 # Datei-Verarbeitung
-if uploaded_files:
-    for uploaded_file in uploaded_files:
-        file_name = uploaded_file.name
-        try:
-            content = uploaded_file.read().decode("utf-8")
+if uploaded_file:
 
-            if not check_required_tga_headers(content):
-                st.error(f"❌ Invalid headers in {file_name}")
-                continue
+    file_name = uploaded_file.name
+    try:
+        content = uploaded_file.read().decode("utf-8")
 
-            df_tga = tga_process_uploaded_file(content)
-            if df_tga is None:
-                st.error(f"⚠️ Could not process {file_name}")
-                continue
+        if not check_required_tga_headers(content):
+            st.error(f"❌ Invalid headers in {file_name}")
 
-            # Duplikate lokal vermeiden
-            if not st.session_state['tga_data'].empty:
-                df_tga = df_tga[~df_tga['sample_id'].isin(st.session_state['tga_data']['sample_id'])]
 
-            st.session_state['tga_data'] = pd.concat([st.session_state['tga_data'], df_tga], ignore_index=True)
+        df_tga = tga_process_uploaded_file(content)
+        if df_tga is None:
+            st.error(f"⚠️ Could not process {file_name}")
 
-        except Exception as e:
-            st.error(f"❌ Error in {file_name}: {e}")
+        # Duplikate lokal vermeiden
+        if not st.session_state['tga_data'].empty:
+            df_tga = df_tga[~df_tga['sample_id'].isin(st.session_state['tga_data']['sample_id'])]
 
+            # Setze den Session-State mit den neuen Daten (überschreibe die alten Daten)
+            st.session_state['chn_data'] = df_tga
+
+    except Exception as e:
+        st.error(f"❌ Error in {file_name}: {e}")
+
+# ----------------------
 # Daten aus DB abrufen (join)
 # ----------------------
-
 st.sidebar.header("Filter")
-# Fetch all projects for selectbox
-all_projects = fetch_all_eltra_tga_data()['project'].dropna().unique().tolist()
-proj_tga = st.sidebar.selectbox("Project", [""] + all_projects)
-# Filter by selected project
-filtered_data = fetch_all_eltra_tga_data(project_filter=proj_tga)
-sample_options = filtered_data['sample_id'].dropna().unique().tolist()
-sid_tga = st.sidebar.selectbox("Sample ID", [""] + sample_options)
-if sid_tga:
-    filtered_data = filtered_data[filtered_data['sample_id'] == sid_tga]
-data_tga = filtered_data
 
-if data_tga.empty:
-    st.warning("⚠️ No Eltra-TGA data in database.")
+# Sicherstellen, dass wir Daten von der DB abrufen können und sie existieren
+try:
+    all_tga_data = fetch_all_eltra_tga_data()
+
+    if all_tga_data is None or all_tga_data.empty:
+        st.warning("⚠️ No ELTRA TGA data found in the database.")
+        data = pd.DataFrame()  # Leerer DataFrame, wenn keine Daten vorhanden sind
+    else:
+        # Fetch all projects for selectbox, falls vorhanden
+        proj_tga = all_tga_data['project'].dropna().unique().tolist()
+
+        # Filter by selected project
+        proj = st.sidebar.selectbox("Project", [""] + proj_tga)
+        filtered_data = all_tga_data[all_tga_data['project'] == proj] if proj else all_tga_data
+        sample_options = filtered_data['sample_id'].dropna().unique().tolist()
+
+        sid = st.sidebar.selectbox("Sample ID", [""] + sample_options, key="tga_sample_select")
+        if sid:
+            filtered_data = filtered_data[filtered_data['sample_id'] == sid]
+        data = filtered_data
+
+except Exception as e:
+    st.error(f"❌ Error fetching data from database: {e}")
+    data = pd.DataFrame()  # Leerer DataFrame, wenn ein Fehler auftritt
+
+# ----------------------
+# Anzeige der gefilterten Daten
+# ----------------------
+if data.empty:
+    st.warning("⚠️ No ELTRA-TGA data available for the selected filter.")
 else:
-    st.markdown("<h2 style='text-align: center;'>Eltra-TGA Data</h2>", unsafe_allow_html=True)
-    st.dataframe(data_tga, height=400)
+    st.markdown("<h2 style='text-align: center;'>ELTRA TGA Data</h2>", unsafe_allow_html=True)
+    st.dataframe(data, height=400)
 
-# Hochgeladene Daten anzeigen
+# ----------------------
+# Hochgeladene Daten anzeigen & speichern
+# ----------------------
 if st.session_state['tga_data'].empty:
-    st.warning("⚠️ No uploaded TGA data.")
+    st.warning("⚠️ No uploaded ELTRA TGA data.")
 else:
-    st.markdown("<h2 style='text-align: center;'>Uploaded TGA Data</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>Uploaded ELTRA TGA Data</h2>", unsafe_allow_html=True)
     st.dataframe(st.session_state['tga_data'])
 
-    # Excel-Download
+    # Download-Button
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        st.session_state['tga_data'].to_excel(writer, sheet_name="TGA", index=False)
+        st.session_state['tga_data'].to_excel(writer, sheet_name="ELTRA TGA", index=False)
     output.seek(0)
 
-    st.sidebar.download_button("📥 Download Excel", data=output, file_name="TGA_Daten.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.sidebar.download_button("📥 Download Excel", data=output, file_name="ELTRA_TGA_Daten.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # 📤 Upload TGA-Daten in die Datenbank
-    if st.sidebar.button("📤 Upload TGA to DB"):
-        try:
-            success, skipped, errors, missing = save_dataframe_to_tga_table(st.session_state['tga_data'])
-
-            if success:
-                st.success(f"✅ Erfolgreich gespeichert: {success}")
-                st.session_state['tga_data'] = pd.DataFrame()
-                st.rerun()
-            if skipped:
-                st.info(f"⏭️ {skipped} Datensätze übersprungen (Duplikate oder fehlende Sample IDs).")
-            if errors:
-                st.warning(f"⚠️ {errors} Fehler beim Speichern der Daten. Details siehe Log.")
-            if not any([success, skipped, errors]):
-                st.info("ℹ️ Keine Daten wurden verarbeitet.")
-
-        except Exception as e:
-            st.error(f"❌ Upload fehlgeschlagen: {e}")
+    # Upload to Database
+    if st.sidebar.button("📤 Upload ELTRA TGA to DB"):
+        success, skipped, errors, missing = save_dataframe_to_tga_table(st.session_state['tga_data'])
+        if success:
+            st.success(f"✅ Successfully saved: {success}")
+            st.session_state['tga_data'] = pd.DataFrame()
+            st.rerun()
+        if skipped:
+            st.info(f"ℹ️ Skipped (already present or invalid): {skipped}")
+        if errors:
+            st.error(f"❌ Upload Error: {errors}")
+        if missing:
+            st.warning(f"⚠️ Sample IDs are not registered: {', '.join(set(missing))}")

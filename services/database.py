@@ -378,12 +378,18 @@ def fetch_all_chn_data(sample_id_filter=None, project_filter=None):
     try:
         query = session.query(CHNData).join(Sample, CHNData.sample_id == Sample.sample_id)
 
-        if sample_id_filter:
-            query = query.filter(CHNData.sample_id.ilike(f"%{sample_id_filter}%"))
         if project_filter:
             query = query.filter(Sample.project.ilike(f"%{project_filter}%"))
+        if sample_id_filter:
+            query = query.filter(CHNData.sample_id.ilike(f"%{sample_id_filter}%"))
 
         results = query.all()
+
+        # Falls keine Ergebnisse vorhanden sind, Info ausgeben und leeren DataFrame zurückgeben
+        if not results:
+            logging.error("❌ Keine Daten verfügbar!")
+            st.write("No CHN-Data available!")
+            return pd.DataFrame()  # Rückgabe eines leeren DataFrames statt None
 
         data = []
         for entry in results:
@@ -406,14 +412,14 @@ def fetch_all_chn_data(sample_id_filter=None, project_filter=None):
         ]
         if not df.empty:
             df = df[columns_order]
-
-        return df
+            return df
 
     except Exception as e:
         logging.error(f"❌ Fehler beim Laden der CHN-Daten mit Projektinfo: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame()  # Rückgabe eines leeren DataFrames im Fehlerfall
     finally:
         session.close()
+
 
 def fetch_all_eltra_tga_data(sample_id_filter=None, project_filter=None):
     session = get_session()
@@ -426,6 +432,12 @@ def fetch_all_eltra_tga_data(sample_id_filter=None, project_filter=None):
             query = query.filter(Sample.project.ilike(f"%{project_filter}%"))
 
         results = query.all()
+
+        # Falls keine Ergebnisse vorhanden sind, Info ausgeben und leeren DataFrame zurückgeben
+        if not results:
+            logging.error("❌ Keine Daten verfügbar!")
+            st.write("No ELTRA TGA-Data available!")
+            return pd.DataFrame()  # Rückgabe eines leeren DataFrames statt None
 
         data = []
         for entry in results:
@@ -452,10 +464,11 @@ def fetch_all_eltra_tga_data(sample_id_filter=None, project_filter=None):
             "ash_lta_ar", "ash_lta_db", "ash_hta_ar", "ash_hta_db",
             "fixed_c_ar"
         ]
+
         if not df.empty:
             df = df[columns_order]
+            return df
 
-        return df
 
     except Exception as e:
         logging.error(f"❌ Fehler beim Laden der Eltra-TGA-Daten mit Projektinfo: {e}")

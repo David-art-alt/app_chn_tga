@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import datetime
 from services.database import save_sample_data, fetch_all_samples
 from services.generate_id import generate_sample_id
@@ -109,42 +110,94 @@ st.markdown(
 if st.button("➕ Register New Sample"):
     register_sample_dialog()
 
-# -------------------------------
-# Combined Sidebar: Filter and Download Label
-# -------------------------------
-st.sidebar.header("Filter and Download Options")
+# Fehlerbehandlung für Datenabruf
+try:
+    all_samples_data = fetch_all_samples()
 
-project_list = fetch_all_samples()['project'].dropna().unique().tolist()
-project_filter = st.sidebar.selectbox("Project Filter", [""] + project_list)
+    # Überprüfen, ob Daten existieren
+    if all_samples_data is None or all_samples_data.empty:
+        st.warning("⚠️ No ELTRA TGA data found in the database.")
+        data = pd.DataFrame()  # Leerer DataFrame, wenn keine Daten vorhanden sind
+    else:
+        # Filter anzeigen, auch wenn keine Daten existieren
+        st.sidebar.header("Filter and Download Options")
 
-# Hole gefilterte Sample-Daten
-data = fetch_all_samples(project_filter=project_filter)
+        # Projektfilter
+        proj_tga = all_samples_data['project'].dropna().unique().tolist()
+        proj = st.sidebar.selectbox("Project", [""] + proj_tga)
 
-if data.empty:
-    st.warning("⚠️ No Data from Database available.")
-else:
-    st.markdown("<h2 style='text-align: center;'>Registered Samples</h2>", unsafe_allow_html=True)
-    st.dataframe(data, height=400)
+        # Filter anwenden, wenn Projekt ausgewählt
+        filtered_data = all_samples_data[all_samples_data['project'] == proj] if proj else all_samples_data
 
-sample_options = data['sample_id'].tolist()
-selected_sample = st.sidebar.selectbox("Select Sample ID", [""] + sample_options, key="download_sample_select")
+        # Sample ID Filter
+        sample_options = filtered_data['sample_id'].dropna().unique().tolist()
+        sample_id = st.sidebar.selectbox("Sample ID", [""] + sample_options)
 
-label_text = ""
+        # Filter anwenden, wenn Sample ID ausgewählt
+        if sample_id:
+            filtered_data = filtered_data[filtered_data['sample_id'] == sample_id]
 
-if selected_sample:
-    sample_row = data[data['sample_id'] == selected_sample].iloc[0]
-    label_text = f"""
-    **Sample ID**: `{sample_row.get('sample_id', 'N/A')}`  
-    **Type**: `{sample_row.get('sample_type', 'N/A')}`  
-    **Project**: `{sample_row.get('project', 'N/A')}`  
-    **Sampling Date**: `{sample_row.get('sampling_date', 'N/A')}`  
-    **Location**: `{sample_row.get('sampling_location', 'N/A')}`  
-    **Condition**: `{sample_row.get('sample_condition', 'N/A')}`  
-    **Responsible**: `{sample_row.get('responsible_person', 'N/A')}`
-    """
+        # Anzeige der gefilterten Daten oder der Warnung
+        if filtered_data.empty:
+            st.warning("⚠️ No data available for the selected filter.")
+        else:
+            st.markdown("<h2 style='text-align: center;'>Registered Samples</h2>", unsafe_allow_html=True)
+            st.dataframe(filtered_data, height=400)
 
-st.sidebar.download_button(
-    label="⬇️ Download Label",
-    data=label_text if label_text != "" else "No sample selected",
-    file_name=f"{sample_row.get('sample_id', 'sample')}_label.txt" if selected_sample else "sample_label.txt"
-)
+        # Wenn eine Sample ID ausgewählt wurde, anzeigen und Download ermöglichen
+        if sample_id:
+            # Nur wenn die sample_id gültig ist, sample_row definieren
+            sample_row = filtered_data[filtered_data['sample_id'] == sample_id].iloc[0]
+            label_text = f"""
+            **Sample ID**: `{sample_row['sample_id'] if 'sample_id' in sample_row else 'N/A'}`  
+            **Type**: `{sample_row['sample_type'] if 'sample_type' in sample_row else 'N/A'}`  
+            **Project**: `{sample_row['project'] if 'project' in sample_row else 'N/A'}`  
+            **Sampling Date**: `{sample_row['sampling_date'] if 'sampling_date' in sample_row else 'N/A'}`  
+            **Location**: `{sample_row['sampling_location'] if 'sampling_location' in sample_row else 'N/A'}`  
+            **Condition**: `{sample_row['sample_condition'] if 'sample_condition' in sample_row else 'N/A'}`  
+            **Responsible**: `{sample_row['responsible_person'] if 'responsible_person' in sample_row else 'N/A'}`
+            """
+            file_name = f"{sample_row['sample_id']}_label.txt"  # Gültigen Dateinamen setzen
+            ID = f"Download Label {file_name}"
+        else:
+            label_text = "No sample selected. Please choose a Sample ID to download the label."
+            file_name = "NO_label.txt"  # Default-Dateiname, wenn keine Sample ID gewählt wurde
+            ID = "Select ID for Download"
+
+        # Immer den Download-Button anzeigen, aber den Download nur aktivieren, wenn file_name gültig ist
+        if file_name != "NO_label.txt":
+            st.sidebar.download_button(
+                label=f"⬇️ {ID}",
+                data=label_text,
+                file_name=f"{file_name if file_name else 'sample_label.txt'}"
+                # Default-Dateiname, wenn keine Sample ID gewählt wurde
+            )
+        else:
+            # Button immer anzeigen, aber keinen Download ermöglichen, wenn keine Sample ID ausgewählt wurde
+            st.markdown(
+                f"""
+                    <style>
+                    .stButton button {{
+                        background-color: #f0f0f5;
+                        border: 1px solid #d6d6d6;
+                        color: black;
+                        width: 100%;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        font-weight: 500;
+                        transition: background-color 0.3s ease;
+                    }}
+                    .stButton button:hover {{
+                        background-color: #e1e1eb;
+                        border-color: #c0c0c8;
+                        color: black;
+                    }}
+                    </style>
+                    """, unsafe_allow_html=True
+            )
+            st.sidebar.button(f"⬇️ {ID}", disabled=True)  # Zeigt den Button an, aber er ist inaktiv
+
+except Exception as e:
+    st.error(f"❌ Error fetching data from database: {e}")
+    all_samples_data = pd.DataFrame()  # Leerer DataFrame, wenn ein Fehler auftritt

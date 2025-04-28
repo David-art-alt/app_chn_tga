@@ -11,6 +11,32 @@ def login():
     username = st.sidebar.text_input("Username:")
     password = st.sidebar.text_input("Password:", type="password")
 
+    # Button immer anzeigen, aber keinen Download ermöglichen, wenn keine Sample ID ausgewählt wurde
+    st.markdown(
+        f"""
+              <style>
+              .stButton button {{
+                  background-color: #f0f0f5;
+                  border: 1px solid #d6d6d6;
+                  color: black;
+                  width: 100%;  /* Macht den Button genauso breit wie das Eingabefeld */
+                  padding: 10px 20px;
+                  border-radius: 5px;
+                  font-size: 16px;
+                  font-weight: 500;
+                  transition: background-color 0.3s ease;
+              }}
+              .stButton button:hover {{
+                  background-color: #e1e1eb;
+                  border-color: #c0c0c8;
+                  color: black;
+              }}
+              
+              </style>
+              """, unsafe_allow_html=True
+    )
+
+
     if st.sidebar.button("Login"):
         logging.info(f"🔐 Login attempt for user: {username}")
         st.info(f"🔍 Login attempt for user: `{username}`")
@@ -38,4 +64,4 @@ def logout():
     st.session_state["logged_in"] = False
     st.session_state["role"] = None
     st.session_state["username"] = None
-    st.rerun()
+
